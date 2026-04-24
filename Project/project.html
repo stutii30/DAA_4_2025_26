@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Smart Plagiarism Visualizer</title>
+    <style>
+        body {
+            font-family: Arial;
+            background: #eef2f7;
+            padding: 25px;
+        }
+        h1 {
+            text-align: center;
+        }
+        textarea {
+            width: 100%;
+            height: 120px;
+            margin: 10px 0;
+            padding: 10px;
+        }
+        .controls {
+            margin: 10px 0;
+        }
+        input[type="range"] {
+            width: 200px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #28a745;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        #result {
+            margin-top: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+        }
+        .highlight {
+            background: yellow;
+            font-weight: bold;
+        }
+        .stats {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Smart Plagiarism Visualizer</h1>
+
+<textarea id="text1" placeholder="Enter Text 1..."></textarea>
+<textarea id="text2" placeholder="Enter Text 2..."></textarea>
+
+<div class="controls">
+    <label>Substring Length (k): </label>
+    <input type="range" min="2" max="10" value="3" id="kSlider" oninput="updateK()">
+    <span id="kValue">3</span>
+</div>
+
+<button onclick="analyze()">Analyze</button>
+
+<div id="result"></div>
+
+<script>
+const base = 31;
+const mod = 1e9 + 9;
+
+function updateK() {
+    document.getElementById("kValue").innerText = document.getElementById("kSlider").value;
+}
+
+function normalize(s) {
+    return s.toLowerCase().replace(/[^a-z ]/g, '');
+}
+
+function computeHash(s, start, len) {
+    let hash = 0, power = 1;
+    for (let i = 0; i < len; i++) {
+        hash = (hash + s.charCodeAt(start + i) * power) % mod;
+        power = (power * base) % mod;
+    }
+    return hash;
+}
+
+function rollHash(oldHash, oldChar, newChar, power) {
+    oldHash = (oldHash - oldChar + mod) % mod;
+    oldHash = (oldHash * base) % mod;
+    oldHash = (oldHash + newChar * power) % mod;
+    return oldHash;
+}
+
+function highlight(text, positions, k) {
+    let res = "";
+    for (let i = 0; i < text.length; i++) {
+        let match = positions.some(pos => i >= pos && i < pos + k);
+        if (match) res += `<span class="highlight">${text[i]}</span>`;
+        else res += text[i];
+    }
+    return res;
+}
+
+function analyze() {
+    let text1 = normalize(document.getElementById("text1").value);
+    let text2 = normalize(document.getElementById("text2").value);
+    let k = parseInt(document.getElementById("kSlider").value);
+
+    let hashMap = {};
+    let power = 1;
+
+    for (let i = 0; i < k - 1; i++)
+        power = (power * base) % mod;
+
+    // Build hash map for text1
+    if (text1.length >= k) {
+        let hash = computeHash(text1, 0, k);
+        hashMap[hash] = [0];
+
+        for (let i = 1; i <= text1.length - k; i++) {
+            hash = rollHash(hash, text1.charCodeAt(i - 1), text1.charCodeAt(i + k - 1), power);
+            if (!hashMap[hash]) hashMap[hash] = [];
+            hashMap[hash].push(i);
+        }
+    }
+
+    let matchPositions = [];
+    let matchCount = 0;
+
+    // Scan text2
+    if (text2.length >= k) {
+        let hash = computeHash(text2, 0, k);
+
+        if (hashMap[hash]) {
+            for (let idx of hashMap[hash]) {
+                if (text1.substr(idx, k) === text2.substr(0, k)) {
+                    matchPositions.push(0);
+                    matchCount++;
+                }
+            }
+        }
+
+        for (let i = 1; i <= text2.length - k; i++) {
+            hash = rollHash(hash, text2.charCodeAt(i - 1), text2.charCodeAt(i + k - 1), power);
+
+            if (hashMap[hash]) {
+                for (let idx of hashMap[hash]) {
+                    if (text1.substr(idx, k) === text2.substr(i, k)) {
+                        matchPositions.push(i);
+                        matchCount++;
+                    }
+                }
+            }
+        }
+    }
+
+    let similarity = ((matchCount * k) / Math.max(text2.length, 1) * 100).toFixed(2);
+
+    let resultHTML = `
+        <div class="stats">
+            <b>Matches:</b> ${matchCount} <br>
+            <b>Similarity:</b> ${similarity}% 
+        </div>
+        <hr>
+        <b>Highlighted Text 2:</b><br>
+        ${highlight(text2, matchPositions, k)}
+    `;
+
+    document.getElementById("result").innerHTML = resultHTML;
+}
+</script>
+
+</body>
+</html>
